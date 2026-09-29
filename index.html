@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 산불 감지 & 조기 경보 시스템</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter & Noto Sans KR -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        /* Scanning overlay effect */
+        .scan-line {
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, #ef4444, #f97316, transparent);
+            position: absolute;
+            top: 0;
+            left: 0;
+            animation: scan 2s infinite linear;
+            box-shadow: 0 0 15px #ef4444;
+        }
+        @keyframes scan {
+            0% { top: 0%; opacity: 0.8; }
+            50% { top: 95%; opacity: 1; }
+            100% { top: 0%; opacity: 0.8; }
+        }
+        .pulse-glow-red {
+            animation: pulseRed 2s infinite;
+        }
+        @keyframes pulseRed {
+            0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.8); }
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between custom-scrollbar">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-red-500/10 p-2 rounded-xl border border-red-500/30">
+                    <i class="fa-solid font-bold fa-fire-flame-curved text-red-500 text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg sm:text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                        AI Wildfire Sentinel
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30">실시간 산불 감지</span>
+                    </h1>
+                    <p class="text-xs text-slate-400">인공지능 비전 기반 산림 화재 및 연기 분석 시스템</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-4">
+                <div class="hidden md:flex items-center space-x-2 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>AI 비전 엔진 가동 중</span>
+                </div>
+                <button id="emergencyContactBtn" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-red-600/30">
+                    <i class="fa-solid fa-phone"></i>
+                    <span>119 신고 수칙</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+
+            <!-- Left Column: Image Upload & Controls (5 cols) -->
+            <section class="lg:col-span-5 flex flex-col space-y-6">
+                <!-- Upload Box -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                    <h2 class="text-base font-semibold text-slate-200 mb-4 flex items-center gap-2">
+                        <i class="fa-solid fa-cloud-arrow-up text-indigo-400"></i>
+                        산림 영상 업로드 및 검사
+                    </h2>
+
+                    <!-- Drag and Drop Zone -->
+                    <div id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-red-500/50 transition-all rounded-xl p-6 text-center cursor-pointer bg-slate-950/50 relative overflow-hidden group">
+                        <input type="file" id="imageInput" accept="image/*" class="hidden">
+                        
+                        <!-- Default Upload UI -->
+                        <div id="uploadPrompt" class="space-y-3 py-4">
+                            <div class="w-16 h-16 bg-slate-800 text-slate-400 rounded-full flex items-center justify-center mx-auto group-hover:bg-red-500/10 group-hover:text-red-400 transition">
+                                <i class="fa-solid fa-mountain-sun text-2xl"></i>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-slate-200">클릭하거나 사진을 이곳으로 드래그하세요</p>
+                                <p class="text-xs text-slate-500 mt-1">JPG, PNG, WEBP 지원 (최대 10MB)</p>
+                            </div>
+                        </div>
+
+                        <!-- Image Preview Box -->
+                        <div id="previewContainer" class="hidden relative rounded-lg overflow-hidden border border-slate-700 bg-black max-h-80">
+                            <img id="imagePreview" class="w-full h-auto object-contain mx-auto max-h-72" alt="업로드된 이미지 미리보기">
+                            <div id="scanOverlay" class="hidden absolute inset-0 bg-black/40 backdrop-blur-[1px]">
+                                <div class="scan-line"></div>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="bg-slate-900/90 border border-slate-700 text-red-400 font-semibold px-4 py-2 rounded-full text-xs shadow-2xl flex items-center gap-2">
+                                        <i class="fa-solid fa-spinner animate-spin"></i>
+                                        AI 화염 & 연기 패턴 스캐닝 중...
+                                    </span>
+                                </div>
+                            </div>
+                            <button id="removeImageBtn" class="absolute top-2 right-2 bg-slate-900/80 hover:bg-red-600 text-slate-300 hover:text-white p-2 rounded-full text-xs backdrop-blur transition">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="mt-4 flex gap-3">
+                        <button id="analyzeBtn" disabled class="flex-1 bg-slate-800 text-slate-500 font-bold py-3 px-4 rounded-xl text-sm transition flex items-center justify-center gap-2 cursor-not-allowed">
+                            <i class="fa-solid fa-magnifying-glass font-bold"></i>
+                            <span>산불 분석 시작</span>
+                        </button>
+                    </div>
+
+                    <!-- Preset Sample Images -->
+                    <div class="mt-6 pt-5 border-t border-slate-800">
+                        <label class="text-xs font-medium text-slate-400 mb-3 block">또는 테스트용 샘플 사진 선택:</label>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button class="sample-btn border border-slate-700 bg-slate-800/60 hover:bg-slate-800 rounded-lg p-2 text-left transition flex flex-col items-center gap-1.5 group" data-type="fire">
+                                <div class="w-full h-14 bg-red-950/40 rounded flex items-center justify-center text-red-500 group-hover:scale-105 transition">
+                                    <i class="fa-solid fa-fire text-2xl"></i>
+                                </div>
+                                <span class="text-[11px] font-medium text-slate-300">🔥 능선 화염</span>
+                            </button>
+
+                            <button class="sample-btn border border-slate-700 bg-slate-800/60 hover:bg-slate-800 rounded-lg p-2 text-left transition flex flex-col items-center gap-1.5 group" data-type="smoke">
+                                <div class="w-full h-14 bg-amber-950/40 rounded flex items-center justify-center text-amber-500 group-hover:scale-105 transition">
+                                    <i class="fa-solid fa-smog text-2xl"></i>
+                                </div>
+                                <span class="text-[11px] font-medium text-slate-300">💨 산림 연기</span>
+                            </button>
+
+                            <button class="sample-btn border border-slate-700 bg-slate-800/60 hover:bg-slate-800 rounded-lg p-2 text-left transition flex flex-col items-center gap-1.5 group" data-type="safe">
+                                <div class="w-full h-14 bg-emerald-950/40 rounded flex items-center justify-center text-emerald-500 group-hover:scale-105 transition">
+                                    <i class="fa-solid fa-tree text-2xl"></i>
+                                </div>
+                                <span class="text-[11px] font-medium text-slate-300">🌲 정상 산림</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- History Log Panel -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl flex-grow flex flex-col">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                            <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i>
+                            최근 분석 이력
+                        </h3>
+                        <button id="clearHistoryBtn" class="text-xs text-slate-500 hover:text-slate-300 transition">기록 삭제</button>
+                    </div>
+                    <div id="historyList" class="space-y-2 overflow-y-auto max-h-48 custom-scrollbar text-xs">
+                        <p class="text-slate-500 text-center py-6">최근 분석 이력이 없습니다.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Column: AI Detection Results Dashboard (7 cols) -->
+            <section class="lg:col-span-7 flex flex-col space-y-6">
+
+                <!-- Main Status & Result Card -->
+                <div id="resultCard" class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden transition-all duration-300 min-h-[420px] flex flex-col justify-center">
+
+                    <!-- Empty Initial State Placeholder -->
+                    <div id="emptyResultState" class="text-center py-12 space-y-4">
+                        <div class="w-20 h-20 bg-slate-800/80 rounded-full flex items-center justify-center mx-auto text-slate-600 border border-slate-700">
+                            <i class="fa-solid fa-shield-cat text-4xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-base font-semibold text-slate-300">분석 준비 완료</h3>
+                            <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                                왼쪽 영역에서 산림 사진을 업로드하거나 테스트 샘플을 선택하여 분석을 시작하세요.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Active Result View (Hidden by default) -->
+                    <div id="activeResultState" class="hidden space-y-6">
+
+                        <!-- Top Status Banner -->
+                        <div id="statusBanner" class="p-4 rounded-xl border flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div id="statusIconBg" class="w-12 h-12 rounded-xl flex items-center justify-center text-xl">
+                                    <i id="statusIcon" class="fa-solid fa-triangle-exclamation"></i>
+                                </div>
+                                <div>
+                                    <div class="text-xs font-semibold tracking-wider uppercase opacity-80" id="statusCategory">진단 상태</div>
+                                    <h3 class="text-xl font-extrabold" id="statusTitle">분석 중...</h3>
+                                </div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-xs text-slate-400">위험도 레벨</div>
+                                <div class="text-lg font-black" id="riskBadge">-</div>
+                            </div>
+                        </div>
+
+                        <!-- Fire Risk Score Gauge Meter -->
+                        <div class="bg-slate-950/60 p-5 rounded-xl border border-slate-800 space-y-2">
+                            <div class="flex justify-between items-center text-xs">
+                                <span class="text-slate-400 font-medium">산불 발생 확신도 / 위험 지수</span>
+                                <span id="riskScorePercent" class="font-bold text-base text-slate-200">0%</span>
+                            </div>
+                            <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden p-0.5">
+                                <div id="riskProgressBar" class="h-full bg-emerald-500 rounded-full transition-all duration-1000 w-0"></div>
+                            </div>
+                            <div class="flex justify-between text-[10px] text-slate-500 pt-1">
+                                <span>0% (안전)</span>
+                                <span>50% (주의/연기)</span>
+                                <span>100% (위험/화염)</span>
+                            </div>
+                        </div>
+
+                        <!-- Summary & AI Detailed Findings -->
+                        <div class="space-y-4">
+                            <div class="bg-slate-950/40 p-4 rounded-xl border border-slate-800">
+                                <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-robot text-indigo-400"></i>
+                                    AI 핵심 진단 요약
+                                </h4>
+                                <p id="summaryText" class="text-sm text-slate-200 leading-relaxed">
+                                    -
+                                </p>
+                            </div>
+
+                            <div class="bg-slate-950/40 p-4 rounded-xl border border-slate-800">
+                                <h4 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-list-check text-indigo-400"></i>
+                                    세부 시각징후 감지 요소
+                                </h4>
+                                <ul id="findingsList" class="space-y-2 text-xs text-slate-300">
+                                    <!-- Dynamic list items -->
+                                </ul>
+                            </div>
+                        </div>
+
+                        <!-- Action Recommendations -->
+                        <div id="actionContainer" class="p-4 rounded-xl border border-slate-800 bg-slate-950/80">
+                            <h4 class="text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5" id="actionHeader">
+                                <i class="fa-solid fa-shield-halved"></i>
+                                권장 대처 및 행동 수칙
+                            </h4>
+                            <p id="actionGuideText" class="text-xs leading-relaxed text-slate-300">
+                                -
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Emergency Instructions Modal -->
+    <div id="emergencyModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+            <button id="closeModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white transition">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <div class="flex items-center gap-3 border-b border-slate-800 pb-4">
+                <div class="bg-red-500/20 text-red-500 p-3 rounded-xl border border-red-500/30">
+                    <i class="fa-solid fa-triangle-exclamation text-xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-base font-bold text-white">산불 발생 시 행동 수칙</h3>
+                    <p class="text-xs text-slate-400">신속한 신고와 안전 대피가 생명을 구합니다.</p>
+                </div>
+            </div>
+
+            <div class="space-y-3 text-xs text-slate-300">
+                <div class="flex gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span class="bg-red-600 text-white font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0">1</span>
+                    <div>
+                        <strong class="text-white block mb-0.5">즉시 119 또는 산림청 신고</strong>
+                        산불 발견 위치, 진행 방향, 연기 색상 및 규모를 정확히 전달하세요.
+                    </div>
+                </div>
+
+                <div class="flex gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span class="bg-red-600 text-white font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0">2</span>
+                    <div>
+                        <strong class="text-white block mb-0.5">바람을 등지고 대피</strong>
+                        산불은 바람이 부는 방향으로 확산됩니다. 불길을 피하여 산 아래나 도로 등 안전지대로 이동하세요.
+                    </div>
+                </div>
+
+                <div class="flex gap-3 bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <span class="bg-red-600 text-white font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0">3</span>
+                    <div>
+                        <strong class="text-white block mb-0.5">대피 못했을 경우</strong>
+                        저지대의 바위 뒤나 수풀이 적은 지역으로 이동하고, 젖은 옷이나 수건으로 입과 코를 가리세요.
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-2">
+                <a href="tel:119" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl text-xs flex items-center justify-center gap-2 transition shadow-lg shadow-red-600/30">
+                    <i class="fa-solid fa-phone-volume"></i>
+                    <span>지금 119 바로 전화 연결</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-800 py-4 text-center text-xs text-slate-500 bg-slate-950">
+        <p>© 2026 AI Wildfire Sentinel - Gemini Vision API Powered Emergency Detection Platform</p>
+    </footer>
+
+    <script>
+        // Global variables and elements
+        let currentBase64Image = null;
+        let currentMimeType = null;
+        let isAnalyzing = false;
+
+        const dropZone = document.getElementById('dropZone');
+        const imageInput = document.getElementById('imageInput');
+        const uploadPrompt = document.getElementById('uploadPrompt');
+        const previewContainer = document.getElementById('previewContainer');
+        const imagePreview = document.getElementById('imagePreview');
+        const removeImageBtn = document.getElementById('removeImageBtn');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const scanOverlay = document.getElementById('scanOverlay');
+
+        const emptyResultState = document.getElementById('emptyResultState');
+        const activeResultState = document.getElementById('activeResultState');
+        const statusBanner = document.getElementById('statusBanner');
+        const statusIconBg = document.getElementById('statusIconBg');
+        const statusIcon = document.getElementById('statusIcon');
+        const statusCategory = document.getElementById('statusCategory');
+        const statusTitle = document.getElementById('statusTitle');
+        const riskBadge = document.getElementById('riskBadge');
+        const riskScorePercent = document.getElementById('riskScorePercent');
+        const riskProgressBar = document.getElementById('riskProgressBar');
+        const summaryText = document.getElementById('summaryText');
+        const findingsList = document.getElementById('findingsList');
+        const actionContainer = document.getElementById('actionContainer');
+        const actionHeader = document.getElementById('actionHeader');
+        const actionGuideText = document.getElementById('actionGuideText');
+        const historyList = document.getElementById('historyList');
+
+        const emergencyModal = document.getElementById('emergencyModal');
+        const emergencyContactBtn = document.getElementById('emergencyContactBtn');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
+        // Built-in Sample Image Data URIs (generated using Canvas for reliable zero-network sample testing)
+        function createSampleImage(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 600;
+            canvas.height = 400;
+            const ctx = canvas.getContext('2d');
+
+            if (type === 'fire') {
+                // Wildfire background
+                const bgGradient = ctx.createLinearGradient(0, 0, 0, 400);
+                bgGradient.addColorStop(0, '#1e0500');
+                bgGradient.addColorStop(0.5, '#4a0e02');
+                bgGradient.addColorStop(1, '#111827');
+                ctx.fillStyle = bgGradient;
+                ctx.fillRect(0, 0, 600, 400);
+
+                // Mountain outline
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.moveTo(0, 400);
+                ctx.lineTo(150, 220);
+                ctx.lineTo(350, 310);
+                ctx.lineTo(500, 180);
+                ctx.lineTo(600, 400);
+                ctx.fill();
+
+                // Flames
+                for (let i = 0; i < 35; i++) {
+                    const x = 120 + Math.random() * 400;
+                    const y = 180 + Math.random() * 120;
+                    const radius = 15 + Math.random() * 35;
+                    const flameGrad = ctx.createRadialGradient(x, y, 2, x, y, radius);
+                    flameGrad.addColorStop(0, '#ffff55');
+                    flameGrad.addColorStop(0.4, '#ff5500');
+                    flameGrad.addColorStop(1, 'transparent');
+                    ctx.fillStyle = flameGrad;
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Smoke
+                for (let i = 0; i < 20; i++) {
+                    const x = 100 + Math.random() * 450;
+                    const y = 50 + Math.random() * 180;
+                    const radius = 30 + Math.random() * 50;
+                    ctx.fillStyle = 'rgba(100, 80, 80, 0.4)';
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+            } else if (type === 'smoke') {
+                // Smoky Mountain
+                const bgGradient = ctx.createLinearGradient(0, 0, 0, 400);
+                bgGradient.addColorStop(0, '#64748b');
+                bgGradient.addColorStop(0.6, '#334155');
+                bgGradient.addColorStop(1, '#0f172a');
+                ctx.fillStyle = bgGradient;
+                ctx.fillRect(0, 0, 600, 400);
+
+                // Mountain
+                ctx.fillStyle = '#1e293b';
+                ctx.beginPath();
+                ctx.moveTo(0, 400);
+                ctx.lineTo(200, 190);
+                ctx.lineTo(400, 280);
+                ctx.lineTo(600, 400);
+                ctx.fill();
+
+                // Plume of thick white/gray smoke
+                for (let i = 0; i < 25; i++) {
+                    const x = 160 + (i * 8) + (Math.random() * 20);
+                    const y = 250 - (i * 8);
+                    const radius = 25 + (i * 2);
+                    ctx.fillStyle = `rgba(220, 225, 230, ${0.15 + (Math.random() * 0.2)})`;
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+            } else {
+                // Safe Green Mountain
+                const bgGradient = ctx.createLinearGradient(0, 0, 0, 400);
+                bgGradient.addColorStop(0, '#38bdf8');
+                bgGradient.addColorStop(0.5, '#7dd3fc');
+                bgGradient.addColorStop(1, '#0284c7');
+                ctx.fillStyle = bgGradient;
+                ctx.fillRect(0, 0, 600, 400);
+
+                // Lush green mountain
+                ctx.fillStyle = '#15803d';
+                ctx.beginPath();
+                ctx.moveTo(0, 400);
+                ctx.lineTo(250, 160);
+                ctx.lineTo(600, 400);
+                ctx.fill();
+
+                ctx.fillStyle = '#166534';
+                ctx.beginPath();
+                ctx.moveTo(150, 400);
+                ctx.lineTo(420, 210);
+                ctx.lineTo(600, 400);
+                ctx.fill();
+            }
+
+            return canvas.toDataURL('image/png');
+        }
+
+        // File Upload Handlers
+        dropZone.addEventListener('click', (e) => {
+            if (e.target.closest('#removeImageBtn')) return;
+            imageInput.click();
+        });
+
+        imageInput.addEventListener('change', handleFileSelect);
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-red-500');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-red-500');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-red-500');
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                processFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        function handleFileSelect(e) {
+            if (e.target.files && e.target.files[0]) {
+                processFile(e.target.files[0]);
+            }
+        }
+
+        function processFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showToast('이미지 파일만 업로드할 수 있습니다.');
+                return;
+            }
+
+            currentMimeType = file.type;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const dataUrl = e.target.result;
+                currentBase64Image = dataUrl.split(',')[1];
+                displayImage(dataUrl);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function displayImage(dataUrl) {
+            imagePreview.src = dataUrl;
+            uploadPrompt.classList.add('hidden');
+            previewContainer.classList.remove('hidden');
+
+            analyzeBtn.disabled = false;
+            analyzeBtn.className = "flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-lg shadow-red-600/30 cursor-pointer";
+        }
+
+        removeImageBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            resetUpload();
+        });
+
+        function resetUpload() {
+            currentBase64Image = null;
+            currentMimeType = null;
+            imageInput.value = '';
+            imagePreview.src = '';
+            uploadPrompt.classList.remove('hidden');
+            previewContainer.classList.add('hidden');
+
+            analyzeBtn.disabled = true;
+            analyzeBtn.className = "flex-1 bg-slate-800 text-slate-500 font-bold py-3 px-4 rounded-xl text-sm transition flex items-center justify-center gap-2 cursor-not-allowed";
+        }
+
+        // Sample Preset Click Event
+        document.querySelectorAll('.sample-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const type = btn.getAttribute('data-type');
+                const sampleDataUrl = createSampleImage(type);
+                currentMimeType = 'image/png';
+                currentBase64Image = sampleDataUrl.split(',')[1];
+                displayImage(sampleDataUrl);
+            });
+        });
+
+        // AI Wildfire Analysis via Gemini API
+        analyzeBtn.addEventListener('click', async () => {
+            if (!currentBase64Image || isAnalyzing) return;
+
+            setAnalyzingState(true);
+
+            const systemPrompt = `
+You are an expert AI Wildfire Emergency Sensor & Computer Vision System.
+Analyze the provided mountain/forest image for any signs of active wildfire, forest fire, flames, smoke plumes, scorch marks, or normal foliage.
+
+Return ONLY a JSON response matching this schema:
+{
+  "status": "WILDFIRE_DETECTED" | "SMOKE_DETECTED" | "SAFE" | "UNCERTAIN",
+  "riskScore": number (0 to 100),
+  "riskLevel": "CRITICAL" | "HIGH" | "MODERATE" | "LOW",
+  "summary": "Short 1-2 sentence Korean summary of the visual findings",
+  "findings": ["Korean bullet point 1", "Korean bullet point 2", "Korean bullet point 3"],
+  "recommendedActions": "Korean emergency action instructions tailored to the status"
+}
+            `;
+
+            const payload = {
+                contents: [{
+                    role: "user",
+                    parts: [
+                        { text: systemPrompt },
+                        {
+                            inlineData: {
+                                mimeType: currentMimeType || "image/png",
+                                data: currentBase64Image
+                            }
+                        }
+                    ]
+                }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            status: { type: "STRING" },
+                            riskScore: { type: "NUMBER" },
+                            riskLevel: { type: "STRING" },
+                            summary: { type: "STRING" },
+                            findings: {
+                                type: "ARRAY",
+                                items: { type: "STRING" }
+                            },
+                            recommendedActions: { type: "STRING" }
+                        },
+                        required: ["status", "riskScore", "riskLevel", "summary", "findings", "recommendedActions"]
+                    }
+                }
+            };
+
+            try {
+                const data = await callGeminiApiWithRetry(payload);
+                renderResults(data);
+                saveHistory(data);
+            } catch (err) {
+                console.error("Analysis Error:", err);
+                showToast("분석 중 오류가 발생했습니다. 다시 시도해 주세요.");
+            } finally {
+                setAnalyzingState(false);
+            }
+        });
+
+        async function callGeminiApiWithRetry(payload, retries = 3, delay = 1000) {
+            const apiKey = ""; // Canvas runtime automatically supplies the API key
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            for (let attempt = 0; attempt < retries; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!jsonText) throw new Error("Empty response from model");
+
+                    return JSON.parse(jsonText);
+                } catch (error) {
+                    if (attempt === retries - 1) throw error;
+                    await new Promise(res => setTimeout(res, delay * Math.pow(2, attempt)));
+                }
+            }
+        }
+
+        function setAnalyzingState(analyzing) {
+            isAnalyzing = analyzing;
+            if (analyzing) {
+                scanOverlay.classList.remove('hidden');
+                analyzeBtn.disabled = true;
+                analyzeBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i><span>AI 분석 중...</span>`;
+            } else {
+                scanOverlay.classList.add('hidden');
+                analyzeBtn.disabled = false;
+                analyzeBtn.innerHTML = `<i class="fa-solid fa-magnifying-glass"></i><span>산불 분석 시작</span>`;
+            }
+        }
+
+        function renderResults(data) {
+            emptyResultState.classList.add('hidden');
+            activeResultState.classList.remove('hidden');
+
+            const score = Math.min(100, Math.max(0, data.riskScore || 0));
+            riskScorePercent.innerText = `${score}%`;
+            riskProgressBar.style.width = `${score}%`;
+
+            // Reset classes
+            statusBanner.className = "p-4 rounded-xl border flex items-center justify-between ";
+            actionContainer.className = "p-4 rounded-xl border border-slate-800 ";
+
+            if (data.status === "WILDFIRE_DETECTED" || score >= 75) {
+                // Critical Wildfire
+                statusBanner.classList.add("bg-red-950/60", "border-red-500/50", "pulse-glow-red");
+                statusIconBg.className = "w-12 h-12 rounded-xl flex items-center justify-center text-xl bg-red-500/20 text-red-500 border border-red-500/30";
+                statusIcon.className = "fa-solid fa-fire-flame-curved animate-bounce";
+                statusCategory.className = "text-xs font-semibold tracking-wider uppercase text-red-400";
+                statusCategory.innerText = "🚨 긴급 경보";
+                statusTitle.className = "text-xl font-extrabold text-red-400";
+                statusTitle.innerText = "산불 발생 감지됨!";
+                riskBadge.className = "text-lg font-black text-red-500";
+                riskBadge.innerText = data.riskLevel || "CRITICAL";
+                riskProgressBar.className = "h-full bg-red-600 rounded-full transition-all duration-1000";
+
+                actionContainer.classList.add("bg-red-950/40", "border-red-500/30");
+                actionHeader.className = "text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 text-red-400";
+
+            } else if (data.status === "SMOKE_DETECTED" || score >= 40) {
+                // Smoke / Caution
+                statusBanner.classList.add("bg-amber-950/60", "border-amber-500/50");
+                statusIconBg.className = "w-12 h-12 rounded-xl flex items-center justify-center text-xl bg-amber-500/20 text-amber-500 border border-amber-500/30";
+                statusIcon.className = "fa-solid fa-smog";
+                statusCategory.className = "text-xs font-semibold tracking-wider uppercase text-amber-400";
+                statusCategory.innerText = "⚠️ 산불 주의보";
+                statusTitle.className = "text-xl font-extrabold text-amber-400";
+                statusTitle.innerText = "산림 연기 포착됨";
+                riskBadge.className = "text-lg font-black text-amber-400";
+                riskBadge.innerText = data.riskLevel || "HIGH";
+                riskProgressBar.className = "h-full bg-amber-500 rounded-full transition-all duration-1000";
+
+                actionContainer.classList.add("bg-amber-950/30", "border-amber-500/30");
+                actionHeader.className = "text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 text-amber-400";
+
+            } else {
+                // Safe Normal Forest
+                statusBanner.classList.add("bg-emerald-950/40", "border-emerald-500/30");
+                statusIconBg.className = "w-12 h-12 rounded-xl flex items-center justify-center text-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                statusIcon.className = "fa-solid fa-tree";
+                statusCategory.className = "text-xs font-semibold tracking-wider uppercase text-emerald-400";
+                statusCategory.innerText = "✅ 정상 상태";
+                statusTitle.className = "text-xl font-extrabold text-emerald-400";
+                statusTitle.innerText = "산불 미감지 (정상)";
+                riskBadge.className = "text-lg font-black text-emerald-400";
+                riskBadge.innerText = data.riskLevel || "SAFE";
+                riskProgressBar.className = "h-full bg-emerald-500 rounded-full transition-all duration-1000";
+
+                actionContainer.classList.add("bg-slate-950/80", "border-slate-800");
+                actionHeader.className = "text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 text-emerald-400";
+            }
+
+            summaryText.innerText = data.summary || "진단 결과 데이터가 수집되었습니다.";
+
+            // Render Findings
+            findingsList.innerHTML = '';
+            if (data.findings && data.findings.length > 0) {
+                data.findings.forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = "flex items-start gap-2";
+                    li.innerHTML = `<i class="fa-solid fa-angle-right text-indigo-400 mt-0.5"></i> <span>${item}</span>`;
+                    findingsList.appendChild(li);
+                });
+            } else {
+                findingsList.innerHTML = `<li class="text-slate-500">특이 징후가 발견되지 않았습니다.</li>`;
+            }
+
+            actionGuideText.innerText = data.recommendedActions || "주변 산림 상태를 주기적으로 관찰해 주세요.";
+        }
+
+        function saveHistory(data) {
+            const history = JSON.parse(localStorage.getItem('wildfire_history') || '[]');
+            const newItem = {
+                timestamp: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+                status: data.status,
+                score: data.riskScore,
+                summary: data.summary
+            };
+            history.unshift(newItem);
+            if (history.length > 10) history.pop();
+            localStorage.setItem('wildfire_history', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const history = JSON.parse(localStorage.getItem('wildfire_history') || '[]');
+            if (history.length === 0) {
+                historyList.innerHTML = `<p class="text-slate-500 text-center py-6">최근 분석 이력이 없습니다.</p>`;
+                return;
+            }
+
+            historyList.innerHTML = history.map(item => {
+                let badgeClass = "bg-emerald-500/20 text-emerald-400 border-emerald-500/30";
+                let statusName = "정상";
+                if (item.status === 'WILDFIRE_DETECTED' || item.score >= 75) {
+                    badgeClass = "bg-red-500/20 text-red-400 border-red-500/30";
+                    statusName = "산불 감지";
+                } else if (item.status === 'SMOKE_DETECTED' || item.score >= 40) {
+                    badgeClass = "bg-amber-500/20 text-amber-400 border-amber-500/30";
+                    statusName = "연기 감지";
+                }
+
+                return `
+                    <div class="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 flex items-center justify-between">
+                        <div class="space-y-0.5 max-w-[70%]">
+                            <div class="flex items-center gap-2">
+                                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold border ${badgeClass}">${statusName}</span>
+                                <span class="text-[10px] text-slate-500">${item.timestamp}</span>
+                            </div>
+                            <p class="text-slate-300 truncate text-[11px]">${item.summary}</p>
+                        </div>
+                        <div class="text-right">
+                            <span class="font-bold text-xs text-slate-200">${item.score}%</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        clearHistoryBtn.addEventListener('click', () => {
+            localStorage.removeItem('wildfire_history');
+            renderHistory();
+        });
+
+        // Emergency Modal Controls
+        emergencyContactBtn.addEventListener('click', () => emergencyModal.classList.remove('hidden'));
+        closeModalBtn.addEventListener('click', () => emergencyModal.classList.add('hidden'));
+        emergencyModal.addEventListener('click', (e) => {
+            if (e.target === emergencyModal) emergencyModal.classList.add('hidden');
+        });
+
+        // Simple Toast Utility
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.className = "fixed bottom-5 right-5 bg-slate-800 text-white text-xs border border-slate-700 px-4 py-3 rounded-xl shadow-2xl z-50 animate-bounce flex items-center gap-2";
+            toast.innerHTML = `<i class="fa-solid fa-circle-info text-indigo-400"></i><span>${message}</span>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Initialize history on load
+        window.addEventListener('DOMContentLoaded', () => {
+            renderHistory();
+        });
+    </script>
+</body>
+</html>
